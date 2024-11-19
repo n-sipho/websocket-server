@@ -1,0 +1,4 @@
+.env
+audio_files
+vendor
+libacrcloud_extr_tool.dylib
