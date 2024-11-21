@@ -5,21 +5,24 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"path/filepath"
-	"time"
-	"websocket-server/pkg/models/song_recognition_response"
-	"websocket-server/pkg/repositories"
-	"websocket-server/pkg/database"
-
 	"github.com/acrcloud/acrcloud_sdk_golang/acrcloud"
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 	"github.com/joho/godotenv"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/spotify"
+	"io"
+	"log"
+	"math/rand"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+	"websocket-server/pkg/database"
+	"websocket-server/pkg/models/song_recognition_response"
+	// "websocket-server/pkg/models/spotify_response"
+	"websocket-server/pkg/repositories"
 )
 
 const (
@@ -27,6 +30,52 @@ const (
 	sampleRate    = 16000
 	bitsPerSample = 16 // 16 bits per sample
 )
+
+type OAuthService struct {
+	config *oauth2.Config
+	state  string
+}
+
+func generateRandomState() string {
+	rand.Seed(time.Now().UnixNano())
+	return fmt.Sprintf("%d", rand.Intn(100000))
+}
+
+func NewOAuthService() *OAuthService {
+	spotifyClientId := os.Getenv("SPOTIFY_CLIENT_ID")
+	spotifySecret := os.Getenv("SPOTIFY_SECRET")
+	return &OAuthService{
+		config: &oauth2.Config{
+			ClientID:     spotifyClientId,
+			ClientSecret: spotifySecret,
+			Endpoint:     spotify.Endpoint,
+			RedirectURL:  "http://localhost:8080/callback/spotify",
+			Scopes:       []string{"playlist-modify-private", "playlist-read-private"},
+		},
+		state: generateRandomState(), // Use a dynamic state in production
+	}
+}
+
+func getSpotifyUserInfo(client *http.Client) (string, error) {
+	resp, err := client.Get("https://api.spotify.com/v1/me")
+	if err != nil {
+		return "", fmt.Errorf("failed to get user info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("error response from Spotify: %s", resp.Status)
+	}
+
+	var user struct {
+		Name string `json:"display_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return "", fmt.Errorf("failed to decode user info: %w", err)
+	}
+
+	return user.Name, nil
+}
 
 func uploadAudioToCLD(fileName string, filePath string) (*uploader.UploadResult, error) {
 	// Add your Cloudinary credentials, set configuration parameter
@@ -100,6 +149,7 @@ func recognizeAudio(filePath string) string {
 	result := recHandler.RecognizeByFile(filePath, 0, 10, userParams)
 	return result
 }
+
 func handlePostAudio(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	sampleRateParam := query.Get("sample_rate")
@@ -150,7 +200,7 @@ func handlePostAudio(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	// Recognize audio
-	// log.Printf("Song Recognition started for audio file: %s", cloudUloadResponse.SecureURL)
+	log.Printf("Song Recognition started for audio file: %s", tempFilePath)
 	songRecognitionRes := recognizeAudio(tempFilePath)
 	var response songrecognitionresponse.SongRecognitionResponse
 
@@ -161,27 +211,64 @@ func handlePostAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// save the response to the database
-	title := response.Metadata.Music[0].Title
-	artist := response.Metadata.Music[0].Artists[0].Name
-	spotifyID := response.Metadata.Music[0].ExternalMetadata.Spotify.Track.ID
-	
-	repositories.SaveTrack(title, artist, spotifyID)
+	if len(response.Metadata.Music) > 0 {
+		// save the response to the database
+		title := response.Metadata.Music[0].Title
+		artist := response.Metadata.Music[0].Artists[0].Name
+		spotifyID := response.Metadata.Music[0].ExternalMetadata.Spotify.Track.ID
 
-	w.WriteHeader(http.StatusOK)
+		repositories.SaveTrack(title, artist, spotifyID)
+		w.WriteHeader(http.StatusOK)
+	}
+}
 
+func (o *OAuthService) HandleSpotifyLogin(w http.ResponseWriter, r *http.Request) {
+	url := o.config.AuthCodeURL(o.state)
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
+
+func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+	if state != o.state {
+		http.Error(w, "Invalid state", http.StatusBadRequest)
+		return
+	}
+
+	token, err := o.config.Exchange(context.Background(), code)
+	if err != nil {
+		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
+		log.Println("Token exchange error:", err)
+		return
+	}
+
+	client := o.config.Client(context.Background(), token)
+	userInfo, err := getSpotifyUserInfo(client)
+	if err != nil {
+		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
+		log.Println("User info error:", err)
+		return
+	}
+	fmt.Fprintf(w, "Logged in successfully! User: %s\n", userInfo)
 }
 
 func main() {
+	oauthService := NewOAuthService()
+	port := "8080"
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
+
+	// API endpoints
+	http.HandleFunc("/login/spotify", oauthService.HandleSpotifyLogin)
+	http.HandleFunc("/callback/spotify", oauthService.HandleCallback)
+	http.HandleFunc("/audio", handlePostAudio)
+
+	// Database setup
 	database.InitDB()
 	defer database.DB.Close()
-	http.HandleFunc("/audio", handlePostAudio)
-	port := "8080"
 	log.Printf("Server starting on port %s...", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

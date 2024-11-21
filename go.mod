@@ -9,7 +9,16 @@ require (
 )
 
 require (
-	github.com/creasty/defaults v1.7.0 // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/zmb3/spotify/v2 v2.4.3 // indirect
+	golang.org/x/net v0.23.0 // indirect
+	golang.org/x/oauth2 v0.24.0 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
+)
+
+require (
+	github.com/creasty/defaults v1.8.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/mattn/go-sqlite3 v1.14.24

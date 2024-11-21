@@ -1,15 +1,15 @@
 package spotify
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"io"
-	"encoding/json"
 )
 
 var (
-	SPOTIFY_BASE_URL = os.Getenv("SPOTIFY_BASE_URL")
+	SPOTIFY_URL = os.Getenv("SPOTIFY_BASE_URL")
 )
 
 // getTrackInfo retrieves information about a Spotify track by its ID.
@@ -18,14 +18,13 @@ var (
 //
 // trackID is the ID of the Spotify track to retrieve information for.
 // Returns the track information as a map, or an error if the request failed.
-func getTrackInfo(trackID string) (map[string]interface{}, error) {
+func getTrackInfo(client *http.Client, trackID string) (map[string]interface{}, error) {
 	// Send the GET request
-	resp, err := http.Get(fmt.Sprintf("%s/tracks/%s", SPOTIFY_BASE_URL, trackID))
+	resp, err := http.Get(fmt.Sprintf("%s/tracks/%s", SPOTIFY_URL, trackID))
 	if err != nil {
 		return nil, fmt.Errorf("error making GET request: %w", err)
 	}
 	defer resp.Body.Close()
-
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -40,4 +39,25 @@ func getTrackInfo(trackID string) (map[string]interface{}, error) {
 	}
 
 	return result, nil
+}
+
+func CreateSpotifyPlaylist(playlistName string, trackIDs []string) error {
+	// Create the request body
+	body := map[string]interface{}{
+		"name":        playlistName,
+		"public":      false,
+		"description": "Playlist created by OMI",
+		"tracks":      trackIDs,
+	}
+	fmt.Println(body)
+	return nil
+}
+
+func AddTrackToSpotifyPlaylist(playlistID, trackID string) error {
+	// Create the request body
+	body := map[string]interface{}{
+		"uris": []string{fmt.Sprintf("spotify:track:%s", trackID)},
+	}
+	fmt.Println("Uris:", body)
+	return nil
 }
