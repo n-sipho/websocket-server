@@ -1,16 +1,22 @@
-package spotify
+package spotify_services
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"log"
+	"fmt"
+	"net/http"
+	"encoding/json"
 )
 
 var (
 	SPOTIFY_URL = os.Getenv("SPOTIFY_BASE_URL")
 )
+
+type user struct {
+	Name string `json:"display_name"`
+	ID   string `json:"id"`
+}
 
 // getTrackInfo retrieves information about a Spotify track by its ID.
 // It sends a GET request to the Spotify API and parses the JSON response
@@ -53,11 +59,33 @@ func CreateSpotifyPlaylist(playlistName string, trackIDs []string) error {
 	return nil
 }
 
-func AddTrackToSpotifyPlaylist(playlistID, trackID string) error {
-	// Create the request body
-	body := map[string]interface{}{
-		"uris": []string{fmt.Sprintf("spotify:track:%s", trackID)},
+// func AddTracksToSpotifyPlaylist(client *http.Client, playlistID, trackID string) error {
+// 	url := "https://api.spotify.com/v1/users/" + "{user_id}" + "/playlists"
+// 	client.Post(url, "application/json")
+// 	// Create the request body
+// 	body := map[string]interface{}{
+// 		"uris": []string{fmt.Sprintf("spotify:track:%s", trackID)},
+// 	}
+// 	fmt.Println("Uris:", body)
+// 	return nil
+// }
+
+func GetSpotifyUserInfo(client *http.Client) (*user, error) {
+	resp, err := client.Get("https://api.spotify.com/v1/me")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
-	fmt.Println("Uris:", body)
-	return nil
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error response from Spotify: %s", resp.Status)
+	}
+
+	var userInfo user
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		return nil, fmt.Errorf("failed to decode user info: %w", err)
+	}
+
+	log.Printf("User ID: %s", userInfo.ID)
+	return &userInfo, nil
 }

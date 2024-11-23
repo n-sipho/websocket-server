@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    uid VARCHAR(255) NOT NULL, -- user_id is from OMI
+    user_id VARCHAR(255) NOT NULL, -- user_id is from the Spotify API
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
