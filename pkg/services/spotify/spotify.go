@@ -1,12 +1,14 @@
 package spotify_services
 
 import (
-	"io"
-	"os"
-	"log"
-	"fmt"
-	"net/http"
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"websocket-server/pkg/database"
 )
 
 var (
@@ -47,19 +49,61 @@ func getTrackInfo(client *http.Client, trackID string) (map[string]interface{}, 
 	return result, nil
 }
 
-func CreateSpotifyPlaylist(playlistName string, trackIDs []string) error {
+func createSpotifyPlaylist(client *http.Client, uid string) (string, error) {
+	userId, err := database.GetUser(uid)
+	if err != nil {
+		log.Println("Error getting user from database:", err)
+		return "", err
+	}
+
 	// Create the request body
 	body := map[string]interface{}{
-		"name":        playlistName,
+		"name":        "OMI Songs",
 		"public":      false,
 		"description": "Playlist created by OMI",
-		"tracks":      trackIDs,
 	}
-	fmt.Println(body)
-	return nil
+	// Serialize the body into JSON
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		log.Println("Error marshalling body:", err)
+		return "", err
+	}
+	// Convert the JSON payload into an io.Reader
+	bodyReader := bytes.NewBuffer([]byte(jsonBody))
+
+	type CreateSpotifyPlaylistResp struct {
+		ID string `json:"id"`
+	}
+	url := "https://api.spotify.com/v1/users/" + userId + "/playlists"
+	resp, err := client.Post(url, "application/json", bodyReader)
+	if err != nil {
+		log.Println("Error creating playlist:", err)
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Println("Error:", resp.Status)
+		return "", nil
+	}
+
+	var response CreateSpotifyPlaylistResp
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		log.Println("Error decoding JSON:", err)
+		return "", err
+	}
+	fmt.Println(resp)
+	return response.ID, nil
 }
 
-// func AddTracksToSpotifyPlaylist(client *http.Client, playlistID, trackID string) error {
+// func AddTracksToSpotifyPlaylist(client *http.Client, playlistID, trackID, uid string) error {
+// 	tracks, err := database.GetAllTracks()
+// 	if err != nil {
+// 		log.Println("Error getting tracks from database:", err)
+// 		return err
+// 	}
+
 // 	url := "https://api.spotify.com/v1/users/" + "{user_id}" + "/playlists"
 // 	client.Post(url, "application/json")
 // 	// Create the request body

@@ -10,6 +10,7 @@ require (
 
 require (
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/zmb3/spotify v1.3.0 // indirect
 	github.com/zmb3/spotify/v2 v2.4.3 // indirect
 	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
