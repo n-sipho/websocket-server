@@ -1,10 +1,14 @@
 package database
 
 import (
+	"database/sql"
 	"log"
 	"time"
-	"database/sql"
+	"websocket-server/pkg/security"
+
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/zmb3/spotify"
+	"golang.org/x/oauth2"
 )
 
 // DB is a global variable for the SQLite database connection
@@ -34,6 +38,16 @@ func InitDB() {
     			user_id VARCHAR(255) NOT NULL,
     			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 			);
+
+			CREATE TABLE IF NOT EXISTS tokens (
+    			id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    			token TEXT NOT NULL UNIQUE
+			);
+
+			CREATE INDEX IF NOT EXISTS tokens_token_idx ON tokens(token);
+
+			CREATE INDEX IF NOT EXISTS tokens_user_id_idx ON tokens(user_id);
 			`
 
 	_, err = DB.Exec(sqlStmt)
@@ -52,7 +66,11 @@ func AddUser(uid, spotifyUserId string) {
 	log.Printf("User added to database with uid: %s and spotifyUserId: %s", uid, spotifyUserId)
 }
 
+// GetUser retrieves the Spotify user ID associated with the given UID from OMI.
+// It queries the users table to find the user_id column value where the uid column matches the provided uid argument.
+// If a matching user is found, the Spotify user ID is returned. Otherwise, a empty string and an error are returned.
 func GetUser(uid string) (string, error) {
+	log.Printf("Getting user with uid: %s", uid)
 	var spotifyUserId string
 	err := DB.QueryRow("SELECT user_id FROM users WHERE uid = ?", uid).Scan(&spotifyUserId)
 	if err != nil {
@@ -62,7 +80,7 @@ func GetUser(uid string) (string, error) {
 }
 
 // saveTrack handles the creation of a new trackId from spotify in the database
-func SaveTrack(title, artist, spotifyId string) {
+func SaveTrack(title, artist string, spotifyId spotify.ID) {
 	log.Println("Checking for existing track with spotify_id:", spotifyId)
 
 	var exists bool
@@ -112,4 +130,27 @@ func GetAllTracks() ([]TrackId, error) {
 	}
 	return tracks, nil
 
+}
+
+func SaveSpotifyToken(token *oauth2.Token, userID string) error {
+	log.Printf("Saving Spotify token for user %s", userID)
+	encryptedToken, err := security.EncryptToken(token)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec(`INSERT INTO tokens (user_id, token) VALUES ($1, $2)`, userID, encryptedToken)
+	return err
+}
+
+func GetSpotifyToken(userID string) (*oauth2.Token, error) {
+	var token string
+	err := DB.QueryRow(`SELECT token FROM tokens WHERE user_id = $1`, userID).Scan(&token)
+	if err != nil {
+		return nil, err
+	}
+	decryptedToken, err := security.DecryptToken(token)
+	if err != nil {
+		return nil, err
+	}
+	return decryptedToken, nil
 }

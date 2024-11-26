@@ -1,5 +1,7 @@
 package songrecognitionresponse
 
+import "github.com/zmb3/spotify"
+
 type SongRecognitionResponse struct {
 	CostTime   float64  `json:"cost_time"`
 	ResultType int      `json:"result_type"`
@@ -61,7 +63,7 @@ type SpotifyArtist struct {
 
 type SpotifyTrack struct {
 	Name string `json:"name"`
-	ID   string `json:"id"`
+	ID   spotify.ID `json:"id"`
 }
 
 type SpotifyAlbum struct {

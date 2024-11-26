@@ -4,85 +4,84 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"github.com/joho/godotenv"
-	"io"
 	"log"
 	"os"
-	"crypto/rand"
 
+	"github.com/joho/godotenv"
+	"golang.org/x/oauth2"
 )
 
-func EncryptToken(plainText string) (string, error) {
+func EncryptToken(token *oauth2.Token) (string, error) {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	key := os.Getenv("ENCRYPTION_KEY")
-	// Convert key and plaintext to byte slices
-	keyBytes := []byte(key)
-	plainTextBytes := []byte(plainText)
-
-	// Create a new AES cipher block
-	block, err := aes.NewCipher(keyBytes)
+	key := []byte(os.Getenv("ENCRYPTION_KEY"))
+	// Convert the token to JSON
+	tokenJSON, err := json.Marshal(token)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to serialize token: %v", err)
 	}
 
-	// Use GCM for encryption
+	// Create a cipher block from the key
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cipher: %v", err)
+	}
+
+	// Use GCM (Galois/Counter Mode) for encryption
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create GCM: %v", err)
 	}
 
-	// Generate a nonce (unique number used once per encryption)
+	// Generate a nonce
 	nonce := make([]byte, aesGCM.NonceSize())
-	_, err = io.ReadFull(rand.Reader, nonce)
-	if err != nil {
-		return "", err
-	}
+	encrypted := aesGCM.Seal(nonce, nonce, tokenJSON, nil)
 
-	// Encrypt the plaintext
-	cipherText := aesGCM.Seal(nonce, nonce, plainTextBytes, nil)
-
-	// Return the encrypted text as a Base64-encoded string
-	return base64.StdEncoding.EncodeToString(cipherText), nil
+	// Return the encrypted data as a base64 string
+	return base64.StdEncoding.EncodeToString(encrypted), nil
 }
 
-func DecryptToken(cipherText, key string) (string, error) {
-	// Convert key and ciphertext to byte slices
-	keyBytes := []byte(key)
-	cipherTextBytes, err := base64.StdEncoding.DecodeString(cipherText)
+func DecryptToken(encryptedToken string) (*oauth2.Token, error) {
+	err := godotenv.Load()
 	if err != nil {
-		return "", err
+		log.Fatal("Error loading .env file")
+	}
+	key := []byte(os.Getenv("ENCRYPTION_KEY"))
+	// Decode the base64-encoded token
+	cipherText, err := base64.StdEncoding.DecodeString(encryptedToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode token: %v", err)
 	}
 
-	// Create a new AES cipher block
-	block, err := aes.NewCipher(keyBytes)
+	// Create a cipher block
+	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to create cipher: %v", err)
 	}
 
 	// Use GCM for decryption
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to create GCM: %v", err)
 	}
 
-	// Extract the nonce from the ciphertext
+	// Extract the nonce size and decrypt
 	nonceSize := aesGCM.NonceSize()
-	if len(cipherTextBytes) < nonceSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-	nonce, cipherTextBytes := cipherTextBytes[:nonceSize], cipherTextBytes[nonceSize:]
-
-	// Decrypt the ciphertext
-	plainTextBytes, err := aesGCM.Open(nil, nonce, cipherTextBytes, nil)
+	nonce, cipherText := cipherText[:nonceSize], cipherText[nonceSize:]
+	plainText, err := aesGCM.Open(nil, nonce, cipherText, nil)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to decrypt token: %v", err)
 	}
 
-	// Return the decrypted text as a string
-	return string(plainTextBytes), nil
-}
+	// Convert the JSON back to a Token
+	var token oauth2.Token
+	if err := json.Unmarshal(plainText, &token); err != nil {
+		return nil, fmt.Errorf("failed to deserialize token: %v", err)
+	}
 
+	return &token, nil
+}

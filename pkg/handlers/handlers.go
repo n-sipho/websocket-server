@@ -3,17 +3,22 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/zmb3/spotify"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"websocket-server/pkg/audio"
 	"websocket-server/pkg/database"
 	"websocket-server/pkg/models/song_recognition_response"
 	"websocket-server/pkg/services/recognition"
+	spotify_services "websocket-server/pkg/services/spotify"
+
+	"github.com/zmb3/spotify"
+
+	// "websocket-server/pkg/services/s"
 
 	"websocket-server/pkg/utils"
 )
@@ -21,18 +26,22 @@ import (
 const redirectURI = "http://localhost:8080/callback/spotify"
 
 var (
-	auth  = spotify.NewAuthenticator(redirectURI, spotify.ScopeUserReadPrivate)
+	auth = spotify.NewAuthenticator(
+		redirectURI,
+		spotify.ScopeUserReadPrivate,
+		spotify.ScopePlaylistModifyPrivate,
+		spotify.ScopePlaylistModifyPublic,
+	)
 	ch    = make(chan *spotify.Client)
 	state = utils.GenerateRandomState()
 )
 
 func HandlePostAudio(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	sampleRateParam := query.Get("sample_rate")
 	uid := query.Get("uid")
+	omiUserId := strings.Split(uid, "?")[0]
 
-	log.Printf("Received request from uid: %s", uid)
-	log.Printf("Requested sample rate: %s", sampleRateParam)
+	log.Printf("Received request from uid: %s", omiUserId)
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -97,6 +106,29 @@ func HandlePostAudio(w http.ResponseWriter, r *http.Request) {
 		spotifyID := response.Metadata.Music[0].ExternalMetadata.Spotify.Track.ID
 
 		database.SaveTrack(title, artist, spotifyID)
+
+		token, tokenError := database.GetSpotifyToken(omiUserId)
+		if tokenError != nil {
+			log.Printf("Failed to get token: %v", tokenError)
+			http.Error(w, "Failed to get token", http.StatusInternalServerError)
+			return
+		}
+
+		client := auth.NewClient(token)
+		playListId, createPlaylistError := spotify_services.CreateSpotifyPlaylist(&client, omiUserId)
+		if createPlaylistError != nil {
+			log.Printf("Failed to create playlist: %v", createPlaylistError)
+			http.Error(w, "Failed to create playlist", http.StatusInternalServerError)
+			return
+		}
+
+		// Add track to playlist
+		addTrackError := spotify_services.AddTrackToSpotifyPlaylist(&client, spotifyID, playListId)
+		if addTrackError != nil {
+			log.Printf("Failed to add track to playlist: %v", addTrackError)
+			http.Error(w, "Failed to add track to playlist", http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}
 
@@ -109,6 +141,8 @@ func HandleSpotifyLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
+	// uid := r.URL.Query().Get("uid") // For production
+	uid := "dlCfOXqkmgMqSr29ycTgzohl4gp1" // For testing purposes
 	tok, err := auth.Token(state, r)
 	if err != nil {
 		http.Error(w, "Couldn't get token", http.StatusForbidden)
@@ -119,11 +153,21 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("State mismatch: %s != %s\n", st, state)
 	}
 
-	log.Println("Token expiry:", tok.Expiry)
-	// client := auth.NewClient(tok)
-	// user, err := client.CurrentUser()
+	client := auth.NewClient(tok)
+	user, err := client.CurrentUser()
 	if err != nil {
 		http.Error(w, "Couldn't get user info", http.StatusInternalServerError)
+		return
+	}
+
+	dbUser, dbUserError := database.GetUser(uid)
+	if dbUserError != nil && dbUser == "" {
+		database.AddUser(uid, user.ID)
+	}
+
+	saveTokenError := database.SaveSpotifyToken(tok, uid)
+	if saveTokenError != nil {
+		http.Error(w, "Failed to save token", http.StatusInternalServerError)
 		return
 	}
 

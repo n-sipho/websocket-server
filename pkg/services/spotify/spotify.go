@@ -1,10 +1,9 @@
 package spotify_services
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	"github.com/zmb3/spotify"
 	"log"
 	"net/http"
 	"os"
@@ -26,93 +25,89 @@ type user struct {
 //
 // trackID is the ID of the Spotify track to retrieve information for.
 // Returns the track information as a map, or an error if the request failed.
-func getTrackInfo(client *http.Client, trackID string) (map[string]interface{}, error) {
-	// Send the GET request
-	resp, err := http.Get(fmt.Sprintf("%s/tracks/%s", SPOTIFY_URL, trackID))
-	if err != nil {
-		return nil, fmt.Errorf("error making GET request: %w", err)
-	}
-	defer resp.Body.Close()
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
+// func getTrackInfo(client *http.Client, trackID string) (map[string]interface{}, error) {
+// 	// Send the GET request
+// 	resp, err := http.Get(fmt.Sprintf("%s/tracks/%s", SPOTIFY_URL, trackID))
+// 	if err != nil {
+// 		return nil, fmt.Errorf("error making GET request: %w", err)
+// 	}
+// 	defer resp.Body.Close()
+// 	// Read the response body
+// 	body, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to read response body: %w", err)
+// 	}
 
-	// Parse the JSON into a map
-	var result map[string]interface{}
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
+// 	// Parse the JSON into a map
+// 	var result map[string]interface{}
+// 	err = json.Unmarshal(body, &result)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+// 	}
 
-	return result, nil
-}
+// 	return result, nil
+// }
 
-func createSpotifyPlaylist(client *http.Client, uid string) (string, error) {
+func CreateSpotifyPlaylist(client *spotify.Client, uid string) (spotify.ID, error) {
 	userId, err := database.GetUser(uid)
 	if err != nil {
 		log.Println("Error getting user from database:", err)
 		return "", err
 	}
 
-	// Create the request body
-	body := map[string]interface{}{
-		"name":        "OMI Songs",
-		"public":      false,
-		"description": "Playlist created by OMI",
-	}
-	// Serialize the body into JSON
-	jsonBody, err := json.Marshal(body)
+	// Fetch user's playlists
+	playlists, err := client.GetPlaylistsForUser(userId)
 	if err != nil {
-		log.Println("Error marshalling body:", err)
+		log.Println("Error fetching user playlists:", err)
 		return "", err
 	}
-	// Convert the JSON payload into an io.Reader
-	bodyReader := bytes.NewBuffer([]byte(jsonBody))
 
-	type CreateSpotifyPlaylistResp struct {
-		ID string `json:"id"`
+	// Check if the playlist already exists
+	var existingPlaylistID spotify.ID
+	for _, playlist := range playlists.Playlists {
+		if playlist.Name == "OMI Songs" {
+			existingPlaylistID = playlist.ID
+			break
+		}
 	}
-	url := "https://api.spotify.com/v1/users/" + userId + "/playlists"
-	resp, err := client.Post(url, "application/json", bodyReader)
+
+	// If the playlist exists, return its ID
+	if existingPlaylistID != "" {
+		return existingPlaylistID, nil
+	}
+
+	// Create a new playlist if it doesn't exist
+	playlist, err := client.CreatePlaylistForUser(userId, "OMI Songs", "Playlist created by OMI", false)
 	if err != nil {
 		log.Println("Error creating playlist:", err)
 		return "", err
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		log.Println("Error:", resp.Status)
-		return "", nil
-	}
-
-	var response CreateSpotifyPlaylistResp
-	err = json.NewDecoder(resp.Body).Decode(&response)
-	if err != nil {
-		log.Println("Error decoding JSON:", err)
-		return "", err
-	}
-	fmt.Println(resp)
-	return response.ID, nil
+	return playlist.ID, nil
 }
 
-// func AddTracksToSpotifyPlaylist(client *http.Client, playlistID, trackID, uid string) error {
-// 	tracks, err := database.GetAllTracks()
-// 	if err != nil {
-// 		log.Println("Error getting tracks from database:", err)
-// 		return err
-// 	}
+func AddTrackToSpotifyPlaylist(client *spotify.Client, trackId spotify.ID, playlistId spotify.ID) error {
+	playlistTracks, getPlaylistError := client.GetPlaylistTracks(playlistId)
+	if getPlaylistError != nil {
+		log.Printf("Error getting playlist tracks: %v", getPlaylistError)
+		return getPlaylistError
+	}
+	// Check if the track is already in the playlist
+	for _, track := range playlistTracks.Tracks {
+		if track.Track.ID == trackId {
+			log.Println("Song already exists in the playlist.")
+			return nil // Song already exists, no need to add
+		}
+	}
 
-// 	url := "https://api.spotify.com/v1/users/" + "{user_id}" + "/playlists"
-// 	client.Post(url, "application/json")
-// 	// Create the request body
-// 	body := map[string]interface{}{
-// 		"uris": []string{fmt.Sprintf("spotify:track:%s", trackID)},
-// 	}
-// 	fmt.Println("Uris:", body)
-// 	return nil
-// }
+	// Add the track to the playlist
+	_, err := client.AddTracksToPlaylist(playlistId, trackId)
+	if err != nil {
+		log.Printf("Error adding tracks: %v", err)
+	}
+	log.Printf("Added %v track to playlist", trackId)
+	return nil
+}
 
 func GetSpotifyUserInfo(client *http.Client) (*user, error) {
 	resp, err := client.Get("https://api.spotify.com/v1/me")
