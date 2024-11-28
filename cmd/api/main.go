@@ -14,7 +14,6 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	// oauthService := NewOAuthService()
 
 	// API endpoints
 	http.HandleFunc("/login/spotify", handlers.HandleSpotifyLogin)

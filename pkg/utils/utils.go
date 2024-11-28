@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+	// "websocket-server/pkg/models/song_recognition_response"
 )
 
 func GenerateRandomState() string {
@@ -16,3 +17,9 @@ func GenerateRandomState() string {
 	// Generate a random integer and format as string
 	return fmt.Sprintf("%d", r.Intn(100000))
 }
+
+// func IsEmptySpotifyMeta(spotifyMeta songrecognitionresponse.SpotifyMeta) bool {
+//     return len(spotifyMeta.Artists) == 0 &&
+//            (spotifyMeta.Track == SpotifyTrack{}) &&
+//            (spotifyMeta.Album == SpotifyAlbum{})
+// }

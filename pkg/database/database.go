@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
 	"websocket-server/pkg/security"
@@ -80,29 +81,30 @@ func GetUser(uid string) (string, error) {
 }
 
 // saveTrack handles the creation of a new trackId from spotify in the database
-func SaveTrack(title, artist string, spotifyId spotify.ID) {
+func SaveTrack(title, artist string, spotifyId spotify.ID) error {
 	log.Println("Checking for existing track with spotify_id:", spotifyId)
 
 	var exists bool
 	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM tracks WHERE spotify_id = ?)", spotifyId).Scan(&exists)
 	if err != nil {
 		log.Printf("Error checking for existing track: %v", err)
-		return
+		return fmt.Errorf("error checking existing track: %w", err)
 	}
 
 	if exists {
 		log.Printf("Track with spotify_id %s already exists, skipping save", spotifyId)
-		return
+		return fmt.Errorf("track with spotify_id %s already exists", spotifyId)
 	}
 
 	log.Println("Saving track to database with title: ", title, " and artist: ", artist)
 	createdAt := time.Now()
-	_, err = DB.Exec("INSERT INTO tracks(title, artist, spotify_id, created_at) VALUES(?, ?, ?, ?)", title, artist, spotifyId, createdAt) // Insert the new todo into the database
+	_, err = DB.Exec("INSERT INTO tracks(title, artist, spotify_id, created_at) VALUES(?, ?, ?, ?)", title, artist, spotifyId, createdAt)
 	if err != nil {
 		log.Printf("Error inserting track into database: %v", err)
-		return
+		return fmt.Errorf("error inserting track: %w", err)
 	}
 	log.Println("Track saved to database with title: ", title, " and artist: ", artist)
+	return nil
 }
 
 type TrackId struct {
