@@ -19,7 +19,7 @@ import (
 	"websocket-server/pkg/utils"
 )
 
-const redirectURI = "http://localhost:8080/callback/spotify"
+const redirectURI = "https://omi-audio-streaming.fly.dev/callback/spotify"
 
 var (
 	auth = spotify.NewAuthenticator(

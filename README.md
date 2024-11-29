@@ -55,7 +55,7 @@ go run cmd/api/main.go
 
 ## API Endpoints
 
-- `POST /process-audio`: Process an audio file, recognize the song, and store it.
+- `POST /audio`: Process audio bytes, recognize the song, and store it.
 
 ## Contributing
 
