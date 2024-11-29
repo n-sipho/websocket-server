@@ -7,9 +7,9 @@ import (
 	"time"
 	"websocket-server/pkg/security"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/zmb3/spotify"
 	"golang.org/x/oauth2"
+	_ "modernc.org/sqlite"
 )
 
 // DB is a global variable for the SQLite database connection
@@ -18,7 +18,7 @@ var DB *sql.DB
 func InitDB() {
 	log.Println("Initializing database...")
 	var err error
-	DB, err = sql.Open("sqlite3", "./tracks.db") // Open a connection to the SQLite database file named app.db
+	DB, err = sql.Open("sqlite", "./tracks.db") // Open a connection to the SQLite database file named app.db
 	if err != nil {
 		log.Fatal(err) // Log an error and stop the program if the database can't be opened
 	}
